@@ -28,7 +28,7 @@ const double _kMenuVerticalPadding = 8.0;
 const double _kMenuWidthStep = 56.0;
 const double _kMenuScreenPadding = 8.0;
 
-abstract class PopupMenuEntry<T> extends StatelessComponent {
+abstract class PopupMenuEntry<T> extends StatefulComponent {
   PopupMenuEntry({ Key key }) : super(key: key);
 
   double get height;
@@ -41,7 +41,11 @@ class PopupMenuDivider extends PopupMenuEntry<dynamic> {
 
   final double height;
 
-  Widget build(BuildContext context) => new Divider(height: height);
+  _PopupMenuDividerState createState() => new _PopupMenuDividerState();
+}
+
+class _PopupMenuDividerState extends State<PopupMenuDivider> {
+  Widget build(BuildContext context) => new Divider(height: config.height);
 }
 
 class PopupMenuItem<T> extends PopupMenuEntry<T> {
@@ -58,20 +62,27 @@ class PopupMenuItem<T> extends PopupMenuEntry<T> {
 
   double get height => _kMenuItemHeight;
 
+  _PopupMenuItemState<PopupMenuItem<T>> createState() => new _PopupMenuItemState<PopupMenuItem<T>>();
+}
+
+class _PopupMenuItemState<T extends PopupMenuItem> extends State<T> {
+  // Override this to put something else in the menu entry.
+  Widget buildChild() => config.child;
+
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     TextStyle style = theme.text.subhead;
-    if (!enabled)
+    if (!config.enabled)
       style = style.copyWith(color: theme.disabledColor);
 
     Widget item = new DefaultTextStyle(
       style: style,
       child: new Baseline(
-        baseline: height - _kBaselineOffsetFromBottom,
-        child: child
+        baseline: config.height - _kBaselineOffsetFromBottom,
+        child: buildChild()
       )
     );
-    if (!enabled) {
+    if (!config.enabled) {
       final bool isDark = theme.brightness == ThemeBrightness.dark;
       item = new IconTheme(
         data: new IconThemeData(opacity: isDark ? 0.5 : 0.38),
@@ -81,7 +92,7 @@ class PopupMenuItem<T> extends PopupMenuEntry<T> {
 
     return new MergeSemantics(
       child: new Container(
-        height: height,
+        height: config.height,
         padding: const EdgeDims.symmetric(horizontal: _kMenuHorizontalPadding),
         child: item
       )
@@ -93,19 +104,52 @@ class CheckedPopupMenuItem<T> extends PopupMenuItem<T> {
   CheckedPopupMenuItem({
     Key key,
     T value,
-    checked: false,
+    this.checked: false,
     bool enabled: true,
     Widget child
   }) : super(
     key: key,
     value: value,
     enabled: enabled,
-    child: new ListItem(
-      enabled: enabled,
-      left: new Icon(icon: checked ? Icons.done : null),
-      primary: child
-    )
+    child: child
   );
+
+  final bool checked;
+
+  _CheckedPopupMenuItemState<T> createState() => new _CheckedPopupMenuItemState<T>();
+}
+
+class _CheckedPopupMenuItemState<T> extends _PopupMenuItemState<CheckedPopupMenuItem<T>> {
+  static const Duration _kAnimateDuration = const Duration(milliseconds: 150);
+  AnimationController _controller;
+  Animation<double> get _opacity => _controller.view;
+
+  void initState() {
+    super.initState();
+    _controller = new AnimationController(duration: _kAnimateDuration)
+      ..value = config.checked ? 1.0 : 0.0
+      ..addListener(() => setState(() {}));
+  }
+
+  void didUpdateConfig(CheckedPopupMenuItem<T> oldConfig) {
+    if (config.checked != oldConfig.checked) {
+      if (config.checked)
+        _controller.forward();
+      else
+        _controller.reverse();
+    }
+  }
+
+  Widget buildChild() {
+    return new ListItem(
+      enabled: config.enabled,
+      left: new FadeTransition(
+        opacity: _opacity,
+        child: new Icon(icon: _controller.isDismissed ? null : Icons.done)
+      ),
+      primary: config.child
+    );
+  }
 }
 
 class _PopupMenu<T> extends StatelessComponent {
@@ -233,15 +277,17 @@ class _PopupMenuRoute<T> extends PopupRoute<T> {
   _PopupMenuRoute({
     Completer<T> completer,
     this.position,
-    this.items,
+    this.itemsGetter,
     this.initialValue,
     this.elevation
   }) : super(completer: completer);
 
   final ModalPosition position;
-  final List<PopupMenuEntry<T>> items;
+  List<PopupMenuEntry<T>> get items => itemsGetter();
   final dynamic initialValue;
   final int elevation;
+
+  _PopupMenuItemsGetter itemsGetter;
 
   ModalPosition getPosition(BuildContext context) => null;
 
@@ -277,25 +323,31 @@ class _PopupMenuRoute<T> extends PopupRoute<T> {
   }
 }
 
-/// Show a popup menu that contains the [items] at [position]. If [initialValue]
-/// is specified then the first item with a matching value will be highlighted
-/// and the value of [position] implies where the left, center point of the
-/// highlighted item should appear. If [initialValue] is not specified then position
-/// implies the menu's origin.
+typedef List<PopupMenuEntry/*<T>*/> _PopupMenuItemsGetter();
+
+/// Show a popup menu that contains the [items] at [position]. If [itemsGetter]
+/// is specified, [items] will be ignored and the items returned by
+/// [itemsGetter] will be used instead. If [initialValue] is specified then the
+/// first item with a matching value will be highlighted and the value of
+/// [position] implies where the left, center point of the highlighted item
+/// should appear. If [initialValue] is not specified then position implies the
+/// menu's origin.
 Future/*<T>*/ showMenu/*<T>*/({
   BuildContext context,
   ModalPosition position,
   List<PopupMenuEntry/*<T>*/> items,
+  _PopupMenuItemsGetter/*<T>*/ itemsGetter,
   dynamic/*=T*/ initialValue,
   int elevation: 8
 }) {
   assert(context != null);
-  assert(items != null && items.length > 0);
+  assert(items != null && items.length > 0 || itemsGetter != null);
+  assert(itemsGetter == null || items == null);
   Completer completer = new Completer/*<T>*/();
   Navigator.push(context, new _PopupMenuRoute/*<T>*/(
     completer: completer,
     position: position,
-    items: items,
+    itemsGetter: itemsGetter ?? () => items,
     initialValue: initialValue,
     elevation: elevation
   ));
@@ -338,7 +390,7 @@ class _PopupMenuButtonState<T> extends State<PopupMenuButton<T>> {
     showMenu/*<T>*/(
       context: context,
       elevation: config.elevation,
-      items: config.items,
+      itemsGetter: () => config.items,
       initialValue: config.initialValue,
       position: new ModalPosition(
         left: topLeft.x,
