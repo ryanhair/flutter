@@ -2,6 +2,8 @@ Flutter
 =======
 [![Build Status](https://travis-ci.org/flutter/flutter.svg?branch=master)](https://travis-ci.org/flutter/flutter)
 
+Purpose of this fork is to determine if Flutter can run well when added to Dart, rather than the current situation with Dart being a part of Flutter. In other words: Can a Dart app add a dependency to flutter, add a transformer, and have everything "just work"?
+
 Flutter is a new way to build high-performance, cross-platform mobile apps.
 Flutter is optimized for today's, and tomorrow's, mobile devices. We are
 focused on low-latency input and high frame rates on Android and iOS.
